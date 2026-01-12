@@ -1,49 +1,73 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, render_template, request , redirect, url_for
+import requests
+import os
+app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
-app = Flask(__name__)
-CORS(app)
-
-PLACES = {
-    "delhi": ["India Gate", "Red Fort", "Qutub Minar"],
-    "jaipur": ["Hawa Mahal", "City Palace", "Amber Fort"],
-    "agra": ["Taj Mahal", "Agra Fort"]
-}
+GOOGLE_KEY = "PASTE_YOUR_GOOGLE_API_KEY"
+WEATHER_KEY = os.getenv("WEATHER_API_KEY")
 
 @app.route("/")
-def home():
-    return "Smart Tourist Backend Running ✅"
+def dashboard():
+    return render_template("dashboard.html")
 
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.json
-    if data["email"] == "test@gmail.com" and data["password"] == "1234":
-        return jsonify({"message": "Login Success"})
-    return jsonify({"message": "Invalid Credentials"}), 401
 
-@app.route("/places")
-def places():
-    city = request.args.get("city", "").lower()
-    return jsonify({"places": PLACES.get(city, [])})
+@app.route("/explore/<category>", methods=["GET", "POST"])
+def explore(category):
+    places = []
 
-@app.route("/weather")
+    if request.method == "POST":
+        city = request.form["city"]
+
+        query_map = {
+            "tourist": "tourist attractions",
+            "restaurants": "restaurants",
+            "hotels": "hotels"
+        }
+
+        query = f"{query_map[category]} in {city}"
+
+        url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+        params = {"query": query, "key": GOOGLE_KEY}
+        res = requests.get(url, params=params).json()
+        places = res.get("results", [])
+
+    return render_template("explore.html", places=places, category=category)
+
+
+@app.route("/weather", methods=["GET", "POST"])
 def weather():
-    return jsonify({
-        "temp": "28°C",
-        "condition": "Sunny"
-    })
+    data = None
+    if request.method == "POST":
+        city = request.form["city"]
+        url = "https://api.openweathermap.org/data/2.5/weather"
+        params = {
+            "q": city,
+            "appid": WEATHER_KEY,
+            "units": "metric"
+        }
+        data = requests.get(url, params=params).json()
 
-@app.route("/budget")
-def budget():
-    amount = int(request.args.get("amount"))
-    if amount < 3000:
-        plan = "Low budget trip (hostel + bus)"
-    elif amount < 7000:
-        plan = "Medium budget trip (hotel + cab)"
-    else:
-        plan = "Luxury trip (resort + flight)"
+    return render_template("weather.html", weather=data)
 
-    return jsonify({"plan": plan})
+@app.route("/send_sos", methods=["POST"])
+def send_sos():
+    lat = request.form.get("lat")
+    lng = request.form.get("lng")
+    phone = request.form.get("phone")
+
+    if not lat or not lng or not phone:
+        return "Location or contact missing", 400
+
+    location_link = f"https://maps.google.com/?q={lat},{lng}"
+    message = f"I am in danger! My location: {location_link}"
+
+    whatsapp_url = f"https://wa.me/{phone}?text={message}"
+
+    return redirect(whatsapp_url)
+
+@app.route("/safety")
+def safety():
+    return render_template("safety.html")
 
 if __name__ == "__main__":
     app.run(debug=True)
